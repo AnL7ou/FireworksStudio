@@ -36,3 +36,7 @@ include_directories(glm-1.0.1)
 # ImGui
 add_subdirectory(imgui-1.91.1)
 include_directories(imgui-1.91.1)
+
+# glengine
+add_subdirectory(glengine)
+include_directories(glengine)
