@@ -1,12 +1,12 @@
 #include "UIManager.h"
 
+#include <iostream>
 #include <imgui.h>
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 
 #include "panels/TemplatePropertyPanel.h"
 
-#include <iostream>
 
 struct UIManager::Impl {
     GLFWwindow* window = nullptr;
@@ -39,7 +39,7 @@ bool UIManager::Initialize(GLFWwindow* window)
     ImGui::StyleColorsDark();
 
     // Backends init (GLFW + OpenGL3)
-    if (!ImGui_ImplGlfw_InitForOpenGL(window, true))
+    if (!ImGui_ImplGlfw_InitForOpenGL(window, false))
     {
         std::cerr << "UIManager::Initialize - ImGui_ImplGlfw_InitForOpenGL failed\n";
         return false;

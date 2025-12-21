@@ -1,5 +1,6 @@
 #include "ShapeRegistry.h"
-#include "../rendering/Texture.h" 
+
+#include "../rendering/Texture.h"
 
 ShapeRegistry::ShapeRegistry() noexcept
 {

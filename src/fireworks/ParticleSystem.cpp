@@ -1,5 +1,5 @@
 ﻿#include "ParticleSystem.h"
-// Constructeurs / Destructeur
+
 ParticleSystem::ParticleSystem()
 	: maxParticles(1000)
 	, lastUsedParticle(0)
@@ -46,7 +46,7 @@ void ParticleSystem::update(float deltaTime)
         particle.velocity += gravity * deltaTime;
 
         // Optionnel : damping ou friction
-        float damping = 0.98f;
+        float damping = 0.3f;
         particle.velocity *= damping;
 
         // Optionnel : fade out de la couleur selon la vie

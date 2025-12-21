@@ -1,4 +1,5 @@
 #include "FireworkInstance.h"
+
 #include <iostream>
 
 FireworkInstance::FireworkInstance()

@@ -1,6 +1,7 @@
 ﻿#define STB_IMAGE_IMPLEMENTATION
-#include <stbimage/stb_image.h>
 #include "Texture.h"
+
+#include <stbimage/stb_image.h>
 #include <iostream>
 
 GLuint Texture::LoadFromFile(const std::string& path, bool flipVertically)

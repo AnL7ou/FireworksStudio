@@ -11,7 +11,7 @@ namespace GLEngine {
 		updateCameraVectors();
 	}
 
-	glm::mat4 OrbitalCamera::getViewMatrix() {
+	glm::mat4 OrbitalCamera::getViewMatrix() const {
 		return glm::lookAt(position, focus, up);
 	}
 

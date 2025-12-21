@@ -1,15 +1,26 @@
 ﻿#include "Application.h"
-#include "../fireworks/ShapeRegistry.h" // ajout
+
+#include <imgui.h>
+
+#include "../fireworks/ShapeRegistry.h"
+
 
 // file-scope pointer pour éviter de toucher Application.h
-static ShapeRegistry * g_shapeRegistry = nullptr;
+static ShapeRegistry* g_shapeRegistry = nullptr;
 
 Application::Application()
-    : shader(nullptr)
+    : camera(
+        /*position*/glm::vec3(0.0f, 0.0f, 10.0f),
+        /*focus*/   glm::vec3(0.0f, 0.0f, 0.0f),   // = position + front
+        /*up*/      glm::vec3(0.0f, 2.0f, 0.0f)
+      )
     , renderer(nullptr)
+	, cameraController(nullptr)
+	, inputRouter(nullptr)
+    , uiManager(nullptr)
+    , shader(nullptr)
     , particleSystem(nullptr)
     , fwInstance(nullptr)
-    , uiManager(nullptr)
 {
 }
 
@@ -105,13 +116,13 @@ bool Application::InitializeParticleSystem()
 
 void Application::InitializeFireworkTemplate()
 {
-    fwTemplate.particlesCount = 800;
-    fwTemplate.particleLifeTime = 3.0f;
+    fwTemplate.particlesCount = 50;
+    fwTemplate.particleLifeTime = 30.0f;
     fwTemplate.explosionRadius = 0.1f;
-    fwTemplate.baseColor = glm::vec4(1.0f, 0.1f, 0.25f, 1.0f);
+    fwTemplate.baseColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 
     // DEBUG : taille visible en pixels (à réduire ensuite)
-    fwTemplate.baseSize = 100.0f; // 16 px = visible, replace par 8/12 en production
+    fwTemplate.baseSize = 16.0; // 16 px = visible, replace par 8/12 en production
 
     fwTemplate.speedMin = 1.0f;
     fwTemplate.speedMax = 4.0f;
@@ -122,13 +133,15 @@ void Application::InitializeFireworkTemplate()
         delete fwInstance;
         fwInstance = nullptr;
     }
-    fwInstance = new FireworkInstance(glm::vec3(0.0f, 0.0f, 0.0f), 1.0f, &fwTemplate);
+    fwInstance = new FireworkInstance(glm::vec3(0.0f, 0.01f, 0.0f), 1.0f, &fwTemplate);
 }
 
 bool Application::InitializeUI()
 {
+    GLFWwindow* w = window.GetWindow(); // Hold a reference for convenience
+
     uiManager = new UIManager();
-    if (!uiManager->Initialize(window.GetWindow()))
+    if (!uiManager->Initialize(w))
     {
         std::cerr << "Failed to initialize UI manager\n";
         return false;
@@ -143,9 +156,20 @@ bool Application::InitializeUI()
         panel->SetOnExplosionTestCallback([this](const FireworkTemplate& t) {
             // explosion au centre du monde
             if (this->particleSystem)
-                this->particleSystem->emit(t, glm::vec3(0.0f, 0.0f, 0.0f));
+                this->particleSystem->emit(t, glm::vec3(0.0f, 0.01f, 0.0f));
             });
     }
+
+    // Create input system
+    inputRouter = new InputRouter();
+    cameraController = new OrbitalCameraController(camera);
+    inputRouter->AddListener(cameraController);
+
+    // Register GLFW callbacks (Application remains the GLFW user pointer)
+    glfwSetMouseButtonCallback(w, mouseButtonCallback);
+    glfwSetCursorPosCallback(w, cursorPosCallback);
+    glfwSetScrollCallback(w, scrollCallback);
+
     return true;
 }
 
@@ -189,8 +213,14 @@ int Application::Run()
         particleSystem->update(delta);
 
         // Render 3D
-        glClearColor(1.0f, 0.0f, 1.0f, 1.0f); // magenta pour debug (remettre plus tard)
+        glClearColor(0.3f, 0.0f, 0.3f, 1.0f); // magenta pour debug (remettre plus tard)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        static int f = 0;
+        if ((f++ % 60) == 0) {
+            glm::vec3 p = camera.getPosition();
+            std::cerr << "[frame] camPos=" << p.x << "," << p.y << "," << p.z << "\n";
+        }
 
         renderer->Render(particleSystem->getPaticles(), camera);
 
@@ -218,6 +248,12 @@ void Application::Shutdown()
     delete shader;
     shader = nullptr;
 
+    delete cameraController;
+    cameraController = nullptr;
+
+    delete inputRouter;
+    inputRouter = nullptr;
+
     // delete global registry
     if (g_shapeRegistry) {
         delete g_shapeRegistry;
@@ -242,10 +278,30 @@ void Application::framebufferSizeCallback(GLFWwindow* glfwWindow, int width, int
 {
     glViewport(0, 0, width, height);
 
-    // Récupérer l'instance Application depuis le user pointer
     Application* app = static_cast<Application*>(glfwGetWindowUserPointer(glfwWindow));
     if (app && app->renderer) {
         float aspectRatio = (height > 0) ? static_cast<float>(width) / static_cast<float>(height) : 16.0f / 9.0f;
         app->renderer->SetAspectRatio(aspectRatio);
     }
+}
+
+void Application::mouseButtonCallback(GLFWwindow* w, int button, int action, int mods)
+{
+    Application* app = static_cast<Application*>(glfwGetWindowUserPointer(w));
+    if (!app || !app->inputRouter) return;
+    app->inputRouter->DispatchMouseButton(w, button, action, mods);
+}
+
+void Application::cursorPosCallback(GLFWwindow* w, double xpos, double ypos)
+{
+    Application* app = static_cast<Application*>(glfwGetWindowUserPointer(w));
+    if (!app || !app->inputRouter) return;
+    app->inputRouter->DispatchCursorPos(w, xpos, ypos);
+}
+
+void Application::scrollCallback(GLFWwindow* w, double xoffset, double yoffset)
+{
+    Application* app = static_cast<Application*>(glfwGetWindowUserPointer(w));
+    if (!app || !app->inputRouter) return;
+    app->inputRouter->DispatchScroll(w, xoffset, yoffset);
 }

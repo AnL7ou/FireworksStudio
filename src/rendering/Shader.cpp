@@ -1,3 +1,5 @@
+#include "Shader.h"
+
 #include <glad/glad.h>
 #include <glm/gtc/type_ptr.hpp>
 
@@ -5,7 +7,6 @@
 #include <sstream>
 #include <iostream>
 
-#include "Shader.h"
 Shader::Shader()
 	: id(0)
 {

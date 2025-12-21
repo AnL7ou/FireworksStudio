@@ -7,6 +7,8 @@
 #include <memory>
 
 #include "Window.h"
+#include "OrbitalCameraController.h"
+#include "InputRouter.h"
 #include "../rendering/Camera.h"
 #include "../rendering/ParticleRenderer.h"
 #include "../fireworks/Particle.h"
@@ -22,15 +24,19 @@ namespace ui { class UIManager; }
 class Application {
 private:
     Window window;
-    Shader* shader;
+    Camera camera;
+
+    // Managers / Services
     ParticleRenderer* renderer;
+    OrbitalCameraController* cameraController;
+	InputRouter* inputRouter;
+    UIManager* uiManager;
+
+    // State / Controllers
+    Shader* shader;
     ParticleSystem* particleSystem;
     FireworkTemplate fwTemplate;
     FireworkInstance* fwInstance;
-    Camera camera;
-
-    // UI manager responsable de tout ImGui (séparation claire)
-    UIManager* uiManager;
 
     // Fonctions d'initialisation factorisées
     bool InitializeWindow();
@@ -39,7 +45,11 @@ private:
     void InitializeFireworkTemplate();
     bool InitializeUI();
     void SetupGLStates();
+
     static void framebufferSizeCallback(GLFWwindow* window, int width, int height);
+    static void mouseButtonCallback(GLFWwindow* w, int button, int action, int mods);
+    static void cursorPosCallback(GLFWwindow* w, double xpos, double ypos);
+    static void scrollCallback(GLFWwindow* w, double xoffset, double yoffset);
 
 public:
     Application();
