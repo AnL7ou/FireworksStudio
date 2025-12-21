@@ -10,7 +10,7 @@ static ShapeRegistry* g_shapeRegistry = nullptr;
 
 Application::Application()
     : camera(
-        /*position*/glm::vec3(0.0f, 0.0f, 10.0f),
+        /*position*/glm::vec3(0.0f, 0.0f, 1.0f),
         /*focus*/   glm::vec3(0.0f, 0.0f, 0.0f),   // = position + front
         /*up*/      glm::vec3(0.0f, 2.0f, 0.0f)
       )
@@ -116,8 +116,8 @@ bool Application::InitializeParticleSystem()
 
 void Application::InitializeFireworkTemplate()
 {
-    fwTemplate.particlesCount = 50;
-    fwTemplate.particleLifeTime = 30.0f;
+    fwTemplate.particlesCount = 100;
+    fwTemplate.particleLifeTime = 3.0f;
     fwTemplate.explosionRadius = 0.1f;
     fwTemplate.baseColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 
@@ -125,7 +125,7 @@ void Application::InitializeFireworkTemplate()
     fwTemplate.baseSize = 16.0; // 16 px = visible, replace par 8/12 en production
 
     fwTemplate.speedMin = 1.0f;
-    fwTemplate.speedMax = 4.0f;
+    fwTemplate.speedMax = 10.0f;
 
     // Instance déclenchée plus tard (optionnel)
     if (fwInstance)

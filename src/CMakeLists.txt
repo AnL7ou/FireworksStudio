@@ -9,7 +9,6 @@ target_link_libraries(VendorLibs INTERFACE
     imgui
     stbimage
     glm
-    glengine
 )
 
 target_include_directories(VendorLibs INTERFACE
@@ -18,7 +17,6 @@ target_include_directories(VendorLibs INTERFACE
     ${CMAKE_SOURCE_DIR}/vendor/stbimage/include
     ${CMAKE_SOURCE_DIR}/vendor/imgui-1.91.1
     ${CMAKE_SOURCE_DIR}/vendor/glm-1.0.1
-    ${CMAKE_SOURCE_DIR}/vendor/glengine
 )
 
 # Ensuite seulement :

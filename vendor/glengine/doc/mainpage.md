@@ -1,3 +1,0 @@
-# libGLEngine
-
-La libraire `libGLEngine` ... 

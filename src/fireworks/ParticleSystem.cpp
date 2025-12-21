@@ -46,11 +46,13 @@ void ParticleSystem::update(float deltaTime)
         particle.velocity += gravity * deltaTime;
 
         // Optionnel : damping ou friction
+		float dampingOffset = 0.1f;
         float damping = 0.3f;
-        particle.velocity *= damping;
+
+        particle.velocity *= damping + ((rand() % 100) / 100.0f - 0.5f) * dampingOffset;
 
         // Optionnel : fade out de la couleur selon la vie
-        // particle.color.a = particle.life / fireworkTemplate.particleLifetime;
+        particle.color.a = sqrt(particle.lifeTime / particle.originalLifeTime);
     }
 }
 
@@ -123,6 +125,7 @@ void ParticleSystem::respawnParticle(Particle& particle, const FireworkTemplate&
 
     // Durée de vie
     particle.lifeTime = fireworkTemplate.particleLifeTime;
+    particle.originalLifeTime = fireworkTemplate.particleLifeTime;
 
     // Active la particule
     particle.active = true;
