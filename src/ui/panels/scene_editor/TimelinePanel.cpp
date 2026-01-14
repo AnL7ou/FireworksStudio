@@ -16,6 +16,21 @@ TimelinePanel::TimelinePanel(Scene* s, Timeline* t, TemplateLibrary* l)
 {
 }
 
+void TimelinePanel::FocusEvent(int eventIndex)
+{
+    if (!scene || !timeline) return;
+    auto& events = scene->GetEvents();
+    if (eventIndex < 0 || eventIndex >= static_cast<int>(events.size())) return;
+
+    if (selectedEventIndex) *selectedEventIndex = eventIndex;
+
+    const float t = events[eventIndex].triggerTime;
+    timeline->SetTime(t);
+    // Align dispatch cursor to avoid retro-triggering.
+    timeline->SetLastDispatchedTime(t);
+    scrubber.RequestFocusTime(t);
+}
+
 void TimelinePanel::Render()
 {
     if (!scene || !timeline) {

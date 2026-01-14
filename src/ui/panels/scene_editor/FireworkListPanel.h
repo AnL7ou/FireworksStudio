@@ -11,6 +11,7 @@ namespace panels {
 class FireworkListPanel {
 public:
     using EventSelectedCallback = std::function<void(int eventIndex)>;
+    using EditSelectedCallback = std::function<void(int eventIndex)>;
 
     FireworkListPanel(Scene* scene, TemplateLibrary* library);
     ~FireworkListPanel() = default;
@@ -18,6 +19,7 @@ public:
     void SetScene(Scene* s) { scene = s; }
     void SetLibrary(TemplateLibrary* l) { library = l; }
     void SetOnEventSelected(EventSelectedCallback cb) { onSelected = std::move(cb); }
+    void SetOnEditSelected(EditSelectedCallback cb) { onEditSelected = std::move(cb); }
     void SetSelectedEventIndexPtr(int* p) { selectedIndexPtr = p; }
 
     int GetSelectedEvent() const { return selectedIndex; }
@@ -28,6 +30,7 @@ private:
     Scene* scene;
     TemplateLibrary* library;
     EventSelectedCallback onSelected;
+    EditSelectedCallback onEditSelected;
     int selectedIndex;
     int* selectedIndexPtr;
 };

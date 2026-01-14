@@ -36,6 +36,10 @@ public:
     // Update toutes les particules actives
     void Update(float deltaTime);
 
+    // Remet le pool à zéro (toutes les particules inactives + trails vidés).
+    // Utile pour les previews en mode Scene (paroxysme) sans lancer la timeline.
+    void ClearAll();
+
     // Trail history access (for renderer)
     // Returns pointer to the first element of the ring buffer for a particle.
     const glm::vec3* GetTrailBuffer(int particleIndex) const;

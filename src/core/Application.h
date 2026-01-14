@@ -20,6 +20,7 @@
 #include "../fireworks/template/TemplateLibrary.h"
 #include "../scene/Scene.h"
 #include "../scene/Timeline.h"
+#include "../scene/ScenePlacementController.h"
 #include "../rendering/Shader.h"
 #include "../ui/UIManager.h"
 
@@ -35,6 +36,7 @@ private:
     ParticleRenderer* renderer;
     TrailRenderer* trailRenderer;
     OrbitalCameraController* cameraController;
+    ScenePlacementController* scenePlacementController;
     InputRouter* inputRouter;
     UIManager* uiManager;
 
@@ -47,6 +49,14 @@ private:
 
     Scene* scene;
     Timeline* timeline;
+
+    // Scene-mode paroxysm preview cache (avoid re-simulating every frame)
+    bool lastTimelinePlaying;
+    uint64_t scenePreviewKey;
+    bool scenePreviewValid;
+
+    uint64_t ComputeScenePreviewKey() const;
+    void RebuildSceneParoxysmPreview(float nowSeconds);
 
     // Fonctions d'initialisation factorisées
     bool InitializeWindow();

@@ -1,46 +1,35 @@
 #include "UIManager.h"
 
 #include <imgui.h>
-#include <backends/imgui_impl_glfw.h>
-#include <backends/imgui_impl_opengl3.h>
 
-#include "panels/template_editor/TemplatePropertiesPanel.h"
-#include "panels/template_editor/LayoutEditorPanel.h"
-#include "panels/template_editor/ColorSchemePanel.h"
-#include "panels/template_editor/TemplateLibraryPanel.h"
+#include "src/ui/subsystems/ImGuiLayer.h"
+#include "src/ui/subsystems/FileController.h"
+#include "src/ui/subsystems/Panels.h"
+#include "src/ui/subsystems/MenuBar.h"
 
-#include "panels/scene_editor/FireworkListPanel.h"
-#include "panels/scene_editor/SceneViewPanel.h"
-#include "panels/scene_editor/TimelinePanel.h"
+#include "src/ui/EditorMode.h"
 
-#include "../fireworks/template/FireworkTemplate.h"
-#include "../fireworks/template/TemplateLibrary.h"
+#include "src/fireworks/template/TemplateLibrary.h"
+#include "src/fireworks/template/FireworkTemplate.h"
+#include "src/fireworks/asset/FireworkAsset.h"
+#include "src/serialization/FireworkSerialization.h"
 
-#include "../scene/Scene.h"
-#include "../scene/Timeline.h"
+#include "src/scene/Scene.h"
+#include "src/scene/Timeline.h"
 
-#include "EditorMode.h"
+#include "src/ui/panels/scene_editor/SceneViewPanel.h"
+#include "src/ui/panels/scene_editor/TimelinePanel.h"
+#include "src/ui/panels/scene_editor/FireworkListPanel.h"
 
 UIManager::UIManager()
     : window(nullptr)
     , initialized(false)
-    , templatePanel(nullptr)
-    , layoutPanel(nullptr)
-    , colorSchemePanel(nullptr)
-    , templateLibraryPanel(nullptr)
-    , fireworkListPanel(nullptr)
-    , sceneViewPanel(nullptr)
-    , timelinePanel(nullptr)
     , showDemoWindow(false)
     , mode(EditorMode::Template)
-    , selectedSceneEventIndex(-1)
 {
 }
 
-UIManager::~UIManager()
-{
-    Shutdown();
-}
+UIManager::~UIManager() { Shutdown(); }
 
 bool UIManager::Initialize(GLFWwindow* w)
 {
@@ -48,18 +37,47 @@ bool UIManager::Initialize(GLFWwindow* w)
 
     window = w;
 
-    // Setup Dear ImGui context
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    imgui = std::make_unique<ui::subsystems::ImGuiLayer>();
+    panels = std::make_unique<ui::subsystems::Panels>();
 
-    // Setup style
-    ImGui::StyleColorsDark();
+    // File controller delegates the actual operations back to UIManager.
+    files = std::make_unique<ui::subsystems::FileController>(
+        [this](ui::subsystems::FileController::Action action, const std::string& path) {
+            // Convert subsystem action into the public UIManager enum.
+            FileAction a = FileAction::LoadScene;
+            switch (action) {
+            case ui::subsystems::FileController::Action::SaveTemplate: a = FileAction::SaveTemplate; break;
+            case ui::subsystems::FileController::Action::LoadTemplate: a = FileAction::LoadTemplate; break;
+            case ui::subsystems::FileController::Action::SaveScene:    a = FileAction::SaveScene;    break;
+            case ui::subsystems::FileController::Action::LoadScene:    a = FileAction::LoadScene;    break;
+            }
+            PerformFileAction(a, path);
+        });
 
-    // Setup Platform/Renderer backends
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init("#version 330");
+    menubar = std::make_unique<ui::subsystems::MenuBar>(ui::subsystems::MenuBar::Callbacks{
+        /*onModeChanged*/ [this](EditorMode m) { mode = m; },
+        /*onNewTemplate*/ [this]() {
+            if (!templateLibraryCtx) return;
+            auto t = std::make_unique<::FireworkTemplate>("Untitled Template");
+            int id = templateLibraryCtx->Add(std::move(t));
+            templateLibraryCtx->SetActiveId(id);
+            if (panels) panels->RefreshTemplatePanelsFromActive();
+        },
+        /*onNewScene*/ [this]() {
+            if (!sceneCtx) return;
+            *sceneCtx = Scene("Untitled Scene");
+            if (timelineCtx) timelineCtx->Reset();
+            if (panels) panels->CreateScenePanels(sceneCtx, timelineCtx, templateLibraryCtx);
+        },
+        /*onFileAction*/ [this](ui::subsystems::FileController::Action a) {
+            if (files) files->RequestFromMenu(a);
+        },
+        /*onExit*/ [this]() {
+            if (window) glfwSetWindowShouldClose(window, GLFW_TRUE);
+        },
+    });
+
+    if (!imgui->Initialize(window)) return false;
 
     initialized = true;
     return true;
@@ -69,214 +87,165 @@ void UIManager::Shutdown()
 {
     if (!initialized) return;
 
-    // Delete panels
-    delete templatePanel;
-    templatePanel = nullptr;
+    if (panels) panels->DestroyAll();
+    panels.reset();
+    menubar.reset();
+    files.reset();
 
-    delete layoutPanel;
-    layoutPanel = nullptr;
-
-    delete colorSchemePanel;
-    colorSchemePanel = nullptr;
-
-    delete templateLibraryPanel;
-    templateLibraryPanel = nullptr;
-
-    delete fireworkListPanel;
-    fireworkListPanel = nullptr;
-
-    delete sceneViewPanel;
-    sceneViewPanel = nullptr;
-
-    delete timelinePanel;
-    timelinePanel = nullptr;
-
-    // Shutdown ImGui
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
+    if (imgui) imgui->Shutdown();
+    imgui.reset();
 
     initialized = false;
 }
 
 void UIManager::NewFrame()
 {
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
+    if (imgui) imgui->NewFrame();
 }
 
 void UIManager::Render()
 {
-    RenderMainMenuBar();
+    if (!initialized) return;
 
-    if (mode == EditorMode::Template) {
-        if (templateLibraryPanel) {
-            ImGui::Begin("Template Library");
-            templateLibraryPanel->Render();
-            ImGui::End();
-        }
-        if (templatePanel) {
-            ImGui::Begin("Template Properties");
-            templatePanel->Render();
-            ImGui::End();
-        }
-        if (layoutPanel) {
-            ImGui::Begin("Branch Layout");
-            layoutPanel->Render();
-            ImGui::End();
-        }
-        if (colorSchemePanel) {
-            ImGui::Begin("Color Scheme");
-            colorSchemePanel->Render();
-            ImGui::End();
-        }
-    } else {
-        if (fireworkListPanel) {
-            ImGui::Begin("Scene Events");
-            fireworkListPanel->Render();
-            ImGui::End();
-        }
-        if (sceneViewPanel) {
-            ImGui::Begin("Scene Inspector");
-            sceneViewPanel->Render();
-            ImGui::End();
-        }
-        if (timelinePanel) {
-            ImGui::Begin("Timeline");
-            timelinePanel->Render();
-            ImGui::End();
-        }
-    }
+    if (menubar) menubar->Render(mode, &showDemoWindow);
 
-    // Demo window (optional)
-    if (showDemoWindow) {
-        ImGui::ShowDemoWindow(&showDemoWindow);
-    }
+    // Important: must run after the menu bar is done.
+    if (files) files->UpdateDeferredOpen();
+    if (files) files->Render();
 
-    // Rendering
-    ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    if (panels) panels->Render(mode);
+
+    if (showDemoWindow) ImGui::ShowDemoWindow(&showDemoWindow);
+
+    if (imgui) imgui->RenderDrawData();
 }
 
 void UIManager::CreateTemplatePanels(TemplateLibrary* library)
 {
-    if (templateLibraryPanel) {
-        delete templateLibraryPanel;
-    }
-    templateLibraryPanel = new ui::panels::TemplateLibraryPanel(library);
-
-    // Create / refresh dependent panels based on active template
-    FireworkTemplate* active = library ? library->GetActive() : nullptr;
-
-    if (templatePanel) delete templatePanel;
-    templatePanel = new ui::panels::TemplatePropertiesPanel(active);
-
-    if (layoutPanel) delete layoutPanel;
-    layoutPanel = active ? new ui::panels::LayoutEditorPanel(&active->layout) : nullptr;
-    if (layoutPanel && active) {
-        layoutPanel->SetOnLayoutChangedCallback([active](const BranchLayout&) {
-            active->RegenerateBranches();
-        });
-    }
-
-    if (colorSchemePanel) delete colorSchemePanel;
-    colorSchemePanel = active ? new ui::panels::ColorSchemePanel(&active->colorScheme) : nullptr;
-    if (colorSchemePanel && active) {
-        colorSchemePanel->SetOnColorSchemeChangedCallback([active](const ColorScheme&) {
-            active->RegenerateBranches();
-        });
-    }
-
-    if (templateLibraryPanel) {
-        templateLibraryPanel->SetOnSelectionChanged([this, library](int activeId) {
-            FireworkTemplate* a = library ? library->Get(activeId) : nullptr;
-            if (templatePanel) templatePanel->SetTemplate(a);
-            if (layoutPanel) delete layoutPanel;
-            layoutPanel = a ? new ui::panels::LayoutEditorPanel(&a->layout) : nullptr;
-            if (layoutPanel && a) {
-                layoutPanel->SetOnLayoutChangedCallback([a](const BranchLayout&) { a->RegenerateBranches(); });
-            }
-            if (colorSchemePanel) delete colorSchemePanel;
-            colorSchemePanel = a ? new ui::panels::ColorSchemePanel(&a->colorScheme) : nullptr;
-            if (colorSchemePanel && a) {
-                colorSchemePanel->SetOnColorSchemeChangedCallback([a](const ColorScheme&) { a->RegenerateBranches(); });
-            }
-        });
+    templateLibraryCtx = library;
+    if (panels) {
+        panels->SetContexts(templateLibraryCtx, sceneCtx, timelineCtx);
+        panels->CreateTemplatePanels(library);
     }
 }
 
 void UIManager::CreateScenePanels(Scene* scene, Timeline* timeline, TemplateLibrary* library)
 {
-    if (fireworkListPanel) delete fireworkListPanel;
-    if (sceneViewPanel) delete sceneViewPanel;
-    if (timelinePanel) delete timelinePanel;
+    sceneCtx = scene;
+    timelineCtx = timeline;
+    templateLibraryCtx = library;
+    if (panels) {
+        panels->SetContexts(templateLibraryCtx, sceneCtx, timelineCtx);
+        panels->CreateScenePanels(scene, timeline, library);
+    }
 
-    selectedSceneEventIndex = -1;
-    fireworkListPanel = new ui::panels::FireworkListPanel(scene, library);
-    sceneViewPanel = new ui::panels::SceneViewPanel(scene, library);
-    timelinePanel = new ui::panels::TimelinePanel(scene, timeline, library);
-
-    // Share the same selection across the list + timeline.
-    if (timelinePanel) timelinePanel->SetSelectedEventIndexPtr(&selectedSceneEventIndex);
-    if (fireworkListPanel) fireworkListPanel->SetSelectedEventIndexPtr(&selectedSceneEventIndex);
-
-    fireworkListPanel->SetOnEventSelected([this](int idx) {
-        selectedSceneEventIndex = idx;
-        if (sceneViewPanel) sceneViewPanel->SetSelectedEvent(idx);
-    });
-}
-
-void UIManager::RenderMainMenuBar()
-{
-    if (ImGui::BeginMainMenuBar()) {
-        if (ImGui::BeginMenu("Mode")) {
-            bool isTemplate = (mode == EditorMode::Template);
-            bool isScene = (mode == EditorMode::Scene);
-            if (ImGui::MenuItem("Template Editor", nullptr, isTemplate)) {
-                mode = EditorMode::Template;
-            }
-            if (ImGui::MenuItem("Scene Editor", nullptr, isScene)) {
-                mode = EditorMode::Scene;
-            }
-            ImGui::EndMenu();
-        }
-
-        if (ImGui::BeginMenu("File")) {
-            if (ImGui::MenuItem("New Template")) {
-                // TODO
-            }
-            if (ImGui::MenuItem("Load Template")) {
-                // TODO
-            }
-            if (ImGui::MenuItem("Save Template")) {
-                // TODO
-            }
-            ImGui::Separator();
-            if (ImGui::MenuItem("Exit")) {
-                glfwSetWindowShouldClose(window, GLFW_TRUE);
-            }
-            ImGui::EndMenu();
-        }
-
-        if (ImGui::BeginMenu("View")) {
-            ImGui::MenuItem("Show Demo Window", nullptr, &showDemoWindow);
-            ImGui::EndMenu();
-        }
-
-        if (ImGui::BeginMenu("Help")) {
-            if (ImGui::MenuItem("About")) {
-                // TODO
-            }
-            ImGui::EndMenu();
-        }
-
-        ImGui::EndMainMenuBar();
+    // Wire scene list "Editer" button: jump to template editor for the selected event.
+    if (auto* list = GetFireworkListPanel()) {
+        list->SetOnEditSelected([this](int eventIndex) {
+            this->EditTemplateForSceneEvent(eventIndex);
+        });
     }
 }
 
-void UIManager::RenderDockSpace()
+ui::panels::TemplatePropertiesPanel* UIManager::GetTemplatePanel() const
 {
-    // Fonction vide si pas de support docking
-    // On utilise juste des fenêtres ImGui normales
+    return panels ? panels->GetTemplatePanel() : nullptr;
+}
+ui::panels::LayoutEditorPanel* UIManager::GetLayoutPanel() const
+{
+    return panels ? panels->GetLayoutPanel() : nullptr;
+}
+ui::panels::ColorSchemePanel* UIManager::GetColorSchemePanel() const
+{
+    return panels ? panels->GetColorSchemePanel() : nullptr;
+}
+ui::panels::TemplateLibraryPanel* UIManager::GetTemplateLibraryPanel() const
+{
+    return panels ? panels->GetTemplateLibraryPanel() : nullptr;
+}
+ui::panels::FireworkListPanel* UIManager::GetFireworkListPanel() const
+{
+    return panels ? panels->GetFireworkListPanel() : nullptr;
+}
+ui::panels::SceneViewPanel* UIManager::GetSceneViewPanel() const
+{
+    return panels ? panels->GetSceneViewPanel() : nullptr;
+}
+ui::panels::TimelinePanel* UIManager::GetTimelinePanel() const
+{
+    return panels ? panels->GetTimelinePanel() : nullptr;
+}
+
+int UIManager::GetSelectedSceneEventIndex() const
+{
+    return panels ? panels->GetSelectedSceneEventIndex() : -1;
+}
+
+void UIManager::SetSelectedSceneEventIndex(int idx)
+{
+    if (panels) panels->SetSelectedSceneEventIndex(idx);
+    if (auto* sv = GetSceneViewPanel()) sv->SetSelectedEvent(idx);
+    if (auto* tl = GetTimelinePanel()) tl->FocusEvent(idx);
+}
+
+void UIManager::EditTemplateForSceneEvent(int sceneEventIndex)
+{
+    if (!sceneCtx || !templateLibraryCtx) return;
+    auto& events = sceneCtx->GetEvents();
+    if (sceneEventIndex < 0 || sceneEventIndex >= static_cast<int>(events.size())) return;
+
+    int tmplId = events[sceneEventIndex].templateId;
+    if (tmplId >= 0) {
+        templateLibraryCtx->SetActiveId(tmplId);
+        if (panels) panels->RefreshTemplatePanelsFromActive();
+    }
+
+    SetMode(EditorMode::Template);
+}
+
+void UIManager::PerformFileAction(FileAction action, const std::string& path)
+{
+    if (action == FileAction::SaveTemplate) {
+        if (templateLibraryCtx) {
+            int id = templateLibraryCtx->GetActiveId();
+            ::FireworkTemplate* t = templateLibraryCtx->Get(id);
+            if (t) {
+                auto asset = std::make_shared<fireworks::FireworkAsset>();
+                asset->setName(t->name);
+                asset->setTemplate(std::make_shared<::FireworkTemplate>(*t));
+                serialization::SaveFireworkAsset(*asset, path);
+            }
+        }
+        return;
+    }
+
+    if (action == FileAction::LoadTemplate) {
+        if (templateLibraryCtx) {
+            auto asset = serialization::LoadFireworkAsset(path);
+            if (asset && asset->templ()) {
+                auto loaded = std::make_unique<::FireworkTemplate>(*asset->templ());
+                int newId = templateLibraryCtx->Add(std::move(loaded));
+                templateLibraryCtx->SetActiveId(newId);
+                if (panels) panels->RefreshTemplatePanelsFromActive();
+            }
+        }
+        return;
+    }
+
+    if (action == FileAction::SaveScene) {
+        if (sceneCtx) serialization::SaveScene(*sceneCtx, path);
+        return;
+    }
+
+    if (action == FileAction::LoadScene) {
+        if (sceneCtx) {
+            auto s = serialization::LoadScene(path);
+            if (s) {
+                *sceneCtx = *s;
+                if (timelineCtx) timelineCtx->Reset();
+                if (panels) panels->CreateScenePanels(sceneCtx, timelineCtx, templateLibraryCtx);
+            }
+        }
+        return;
+    }
 }

@@ -33,7 +33,32 @@ TimelineScrubber::TimelineScrubber()
     , rowHeight(42.0f)
     , snapEnabled(true)
     , snapSeconds(0.1f)
+    , pendingFocusTimeSeconds(-1.0f)
 {
+}
+
+static float EstimateTemplateDurationSeconds(const FireworkTemplate* t)
+{
+    if (!t) return 0.0f;
+    float d = 0.0f;
+
+    // Minimal, pragmatic estimate: emission window + particle lifetime.
+    d += std::max(0.0f, t->branchTemplate.emissionDuration);
+    d += std::max(0.0f, t->branchTemplate.lifetime);
+
+    // Trails extend visibility slightly.
+    if (t->branchTemplate.trailEnabled) {
+        d += std::max(0.0f, t->branchTemplate.trailDuration);
+    }
+
+    // Keep a visible minimum.
+    if (d < 0.05f) d = 0.05f;
+    return d;
+}
+
+void TimelineScrubber::RequestFocusTime(float tSeconds)
+{
+    pendingFocusTimeSeconds = tSeconds;
 }
 
 bool TimelineScrubber::Render(Scene* scene, Timeline* timeline, TemplateLibrary* library, int* selectedEventIndex)
@@ -61,6 +86,20 @@ bool TimelineScrubber::Render(Scene* scene, Timeline* timeline, TemplateLibrary*
 
     // Timeline canvas
     const ImVec2 canvasSize = ImVec2(ImGui::GetContentRegionAvail().x, 180.0f);
+
+    // Consume pending focus request once we know the viewport size.
+    if (pendingFocusTimeSeconds >= 0.0f) {
+        const float visibleSeconds = (pixelsPerSecond > 0.0f) ? (canvasSize.x / pixelsPerSecond) : 0.0f;
+        const float maxScroll = std::max(0.0f, duration - visibleSeconds);
+        // Put the focused time a bit after the left edge (like most NLEs).
+        float targetScroll = pendingFocusTimeSeconds - (visibleSeconds * 0.25f);
+        if (targetScroll < 0.0f) targetScroll = 0.0f;
+        if (targetScroll > maxScroll) targetScroll = maxScroll;
+        scrollSeconds = targetScroll;
+        pendingFocusTimeSeconds = -1.0f;
+        changed = true;
+    }
+
     ImGui::BeginChild("##timeline_canvas", canvasSize, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -76,6 +115,20 @@ bool TimelineScrubber::Render(Scene* scene, Timeline* timeline, TemplateLibrary*
     auto XToTime = [&](float x) {
         return scrollSeconds + (x - p0.x) / pixelsPerSecond;
     };
+
+    // Consume external focus request (e.g., from inspector selection).
+    if (pendingFocusTimeSeconds >= 0.0f) {
+        const float visibleSpan = (pixelsPerSecond > 0.0f) ? (canvasSize.x / pixelsPerSecond) : 1.0f;
+        float target = pendingFocusTimeSeconds;
+        // Put the target time near the first quarter of the viewport (gives room to the right).
+        float newScroll = target - visibleSpan * 0.25f;
+        float maxScroll = std::max(0.0f, duration - visibleSpan);
+        if (newScroll < 0.0f) newScroll = 0.0f;
+        if (newScroll > maxScroll) newScroll = maxScroll;
+        scrollSeconds = newScroll;
+        pendingFocusTimeSeconds = -1.0f;
+        changed = true;
+    }
 
     // Grid
     float major = 1.0f;
@@ -108,6 +161,41 @@ bool TimelineScrubber::Render(Scene* scene, Timeline* timeline, TemplateLibrary*
     // Interaction helpers
     const bool hovered = ImGui::IsWindowHovered();
     const ImVec2 mouse = ImGui::GetMousePos();
+
+    auto& events = scene->GetEvents();
+
+    // Drag & drop target: allow dropping an event from the scene list to move it in time.
+    // We target only the track row, since dropping on the ruler can be ambiguous.
+    ImGui::SetCursorScreenPos(ImVec2(p0.x, rowY0));
+    ImGui::InvisibleButton("##timeline_drop_row", ImVec2(canvasSize.x, rowHeight));
+    if (ImGui::BeginDragDropTarget()) {
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("SCENE_EVENT_INDEX")) {
+            if (payload->Data && payload->DataSize == sizeof(int)) {
+                int idx = *static_cast<const int*>(payload->Data);
+                if (idx >= 0 && idx < static_cast<int>(events.size())) {
+                    float t = XToTime(mouse.x);
+                    t = std::max(0.0f, std::min(duration, t));
+                    if (snapEnabled) t = SnapTo(t, snapSeconds);
+                    events[idx].triggerTime = t;
+                    scene->SortByTime();
+                    // Sorting changes indices: re-find by pointer-stable key (best effort).
+                    // Here we keep selection on the closest event in time.
+                    if (selectedEventIndex) {
+                        // Find event with smallest time delta.
+                        int best = 0;
+                        float bestDt = std::abs(scene->GetEvents()[0].triggerTime - t);
+                        for (int i = 1; i < static_cast<int>(scene->GetEvents().size()); ++i) {
+                            float dt = std::abs(scene->GetEvents()[i].triggerTime - t);
+                            if (dt < bestDt) { best = i; bestDt = dt; }
+                        }
+                        *selectedEventIndex = best;
+                    }
+                    changed = true;
+                }
+            }
+        }
+        ImGui::EndDragDropTarget();
+    }
 
     // --- Playhead dragging (public ImGui API only) ---
     static bool playheadDragging = false;     // if you have multiple timelines, move this into your timeline UI state
@@ -149,14 +237,23 @@ bool TimelineScrubber::Render(Scene* scene, Timeline* timeline, TemplateLibrary*
     }
 
     // Events
-    auto& events = scene->GetEvents();
     int hoveredEvent = -1;
     for (int i = 0; i < static_cast<int>(events.size()); ++i) {
         const FireworkEvent& e = events[i];
-        float x = TimeToX(e.triggerTime);
+        float x0 = TimeToX(e.triggerTime);
         float y = (rowY0 + rowY1) * 0.5f;
-        ImVec2 a(x - 6.0f, y - 10.0f);
-        ImVec2 b(x + 6.0f, y + 10.0f);
+
+        // Show event as a segment whose length matches the template duration.
+        float dur = 0.2f;
+        if (library) {
+            const FireworkTemplate* t = library->Get(e.templateId);
+            dur = EstimateTemplateDurationSeconds(t);
+        }
+        float x1 = TimeToX(e.triggerTime + dur);
+        if (x1 < x0 + 10.0f) x1 = x0 + 10.0f; // always draggable/visible
+
+        ImVec2 a(x0, y - 10.0f);
+        ImVec2 b(x1, y + 10.0f);
 
         if (mouse.x >= a.x && mouse.x <= b.x && mouse.y >= a.y && mouse.y <= b.y && hovered) {
             hoveredEvent = i;
@@ -166,8 +263,41 @@ bool TimelineScrubber::Render(Scene* scene, Timeline* timeline, TemplateLibrary*
         ImU32 col = selected ? IM_COL32(110, 190, 255, 255) : IM_COL32(200, 220, 255, 220);
         if (!e.enabled) col = IM_COL32(130, 130, 130, 180);
 
-        dl->AddRectFilled(a, b, col, 2.0f);
-        dl->AddRect(a, b, IM_COL32(0, 0, 0, 180), 2.0f);
+        dl->AddRectFilled(a, b, col, 3.0f);
+        dl->AddRect(a, b, IM_COL32(0, 0, 0, 180), 3.0f);
+
+        // Label inside the segment: prefer template name, fallback to event label.
+        const char* name = nullptr;
+        if (library) {
+            name = library->GetName(e.templateId);
+        }
+        if (!name || name[0] == '\0') {
+            name = e.label.c_str();
+        }
+        if (name && name[0] != '\0') {
+            // Clip to the segment bounds so long names don't bleed out.
+            dl->PushClipRect(a, b, true);
+            const float padX = 6.0f;
+            const float padY = 2.0f;
+            ImVec2 tp(a.x + padX, a.y + padY);
+            dl->AddText(tp, IM_COL32(10, 12, 16, 220), name);
+            dl->PopClipRect();
+        }
+
+        // Small "start handle" to keep the "point" semantics visible.
+        dl->AddRectFilled(ImVec2(x0 - 3.0f, y - 12.0f), ImVec2(x0 + 3.0f, y + 12.0f), IM_COL32(0, 0, 0, 120), 2.0f);
+    }
+
+    // Click on empty space: move playhead (and therefore resume playback from there).
+    if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && hoveredEvent < 0 && !playheadDragging) {
+        if (std::abs(mouse.x - playX) > playGrabRadius) {
+            float t = XToTime(mouse.x);
+            t = std::max(0.0f, std::min(duration, t));
+            if (snapEnabled) t = SnapTo(t, snapSeconds);
+            timeline->SetTime(t);
+            timeline->SetLastDispatchedTime(t);
+            changed = true;
+        }
     }
 
     // Select / drag event
@@ -203,7 +333,12 @@ bool TimelineScrubber::Render(Scene* scene, Timeline* timeline, TemplateLibrary*
         if (ImGui::MenuItem("Add event here")) {
             FireworkEvent e;
             e.triggerTime = t;
-            e.templateId = library ? library->GetActiveId() : -1;
+            if (library) {
+                int active = library->GetActiveId();
+                e.templateId = (active >= 0) ? library->Clone(active) : -1;
+            } else {
+                e.templateId = -1;
+            }
             e.position = {0.0f, 0.0f, 0.0f};
             e.label = "Firework";
             scene->AddEvent(e);

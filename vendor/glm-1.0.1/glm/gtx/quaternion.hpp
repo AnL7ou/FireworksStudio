@@ -1,3 +1,5 @@
+#define GLM_ENABLE_EXPERIMENTAL
+
 /// @ref gtx_quaternion
 /// @file glm/gtx/quaternion.hpp
 ///

@@ -243,3 +243,16 @@ void ParticlePool::Update(float deltaTime)
         }
     }
 }
+
+void ParticlePool::ClearAll()
+{
+    // Mark everything inactive and reset per-particle trail state.
+    for (auto& p : particles) {
+        p.active = false;
+        p.trailCount = 0;
+        p.trailHead = 0;
+        p.trailSampleAccum = 0.0f;
+    }
+    std::fill(trailPositions.begin(), trailPositions.end(), glm::vec3(0.0f));
+    lastSearchIndex = 0;
+}

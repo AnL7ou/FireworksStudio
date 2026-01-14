@@ -12,6 +12,7 @@ FireworkListPanel::FireworkListPanel(Scene* s, TemplateLibrary* l)
     : scene(s)
     , library(l)
     , onSelected(nullptr)
+    , onEditSelected(nullptr)
     , selectedIndex(-1)
     , selectedIndexPtr(nullptr)
 {
@@ -25,19 +26,31 @@ void FireworkListPanel::Render()
     }
 
     auto& events = scene->GetEvents();
-    ImGui::Text("Événements: %zu", events.size());
+    ImGui::Text("Feux dans la scène: %zu", events.size());
 
-    if (ImGui::Button("Ajouter événement")) {
+    if (ImGui::Button("+")) {
         FireworkEvent e;
-        e.templateId = library ? library->GetActiveId() : -1;
+        // Each scene event should be editable independently.
+        // So we clone the currently active template instead of referencing it directly.
+        if (library) {
+            int active = library->GetActiveId();
+            e.templateId = (active >= 0) ? library->Clone(active) : -1;
+        } else {
+            e.templateId = -1;
+        }
         e.triggerTime = 0.0f;
         e.position = glm::vec3(0.0f, 0.0f, 0.0f);
         e.label = "Firework";
         scene->AddEvent(e);
     }
     ImGui::SameLine();
-    if (ImGui::Button("Trier")) {
-        scene->SortByTime();
+    {
+        const bool hasSelection = (selectedIndex >= 0 && selectedIndex < static_cast<int>(events.size()));
+        ImGui::BeginDisabled(!hasSelection);
+        if (ImGui::Button("Editer")) {
+            if (onEditSelected) onEditSelected(selectedIndex);
+        }
+        ImGui::EndDisabled();
     }
 
     ImGui::Separator();
@@ -60,6 +73,13 @@ void FireworkListPanel::Render()
                 selectedIndex = i;
                 if (selectedIndexPtr) *selectedIndexPtr = i;
                 if (onSelected) onSelected(i);
+            }
+
+            // Drag this event onto the timeline to move it.
+            if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+                ImGui::SetDragDropPayload("SCENE_EVENT_INDEX", &i, sizeof(int));
+                ImGui::TextUnformatted(buf);
+                ImGui::EndDragDropSource();
             }
         }
         ImGui::EndListBox();

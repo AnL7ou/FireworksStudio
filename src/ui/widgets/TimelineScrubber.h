@@ -15,6 +15,10 @@ class TimelineScrubber {
 public:
     TimelineScrubber();
 
+    // Request the view to scroll so that time 'tSeconds' is visible (typically near the center).
+    // The request is consumed on the next Render() call.
+    void RequestFocusTime(float tSeconds);
+
     // Returns true if it changed the timeline time or edited events.
     bool Render(Scene* scene, Timeline* timeline, TemplateLibrary* library, int* selectedEventIndex);
 
@@ -24,4 +28,6 @@ private:
     float rowHeight;
     bool snapEnabled;
     float snapSeconds;
+
+    float pendingFocusTimeSeconds;
 };

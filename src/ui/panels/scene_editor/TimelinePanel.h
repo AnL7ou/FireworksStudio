@@ -19,6 +19,9 @@ public:
     void SetTemplateLibrary(TemplateLibrary* l) { library = l; }
     void SetSelectedEventIndexPtr(int* p) { selectedEventIndex = p; }
 
+    // Called by external UI (e.g., inspector) to jump to a specific event.
+    void FocusEvent(int eventIndex);
+
     void Render();
 
 private:

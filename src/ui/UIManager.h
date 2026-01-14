@@ -2,6 +2,20 @@
 
 #include <GLFW/glfw3.h>
 
+#include <string>
+#include <vector>
+
+#include <memory>
+
+namespace ui {
+    namespace subsystems {
+        class ImGuiLayer;
+        class FileController;
+        class Panels;
+        class MenuBar;
+    }
+}
+
 // Forward declarations
 class FireworkTemplate;
 class BranchLayout;
@@ -28,6 +42,15 @@ public:
     UIManager();
     ~UIManager();
 
+    // High-level file operations triggered from the menu.
+    enum class FileAction {
+        SaveTemplate,
+        LoadTemplate,
+        SaveScene,
+        LoadScene,
+    };
+
+
     bool Initialize(GLFWwindow* window);
     void Shutdown();
 
@@ -43,40 +66,43 @@ public:
     EditorMode GetMode() const { return mode; }
 
     // Getters
-    ui::panels::TemplatePropertiesPanel* GetTemplatePanel() const { return templatePanel; }
-    ui::panels::LayoutEditorPanel* GetLayoutPanel() const { return layoutPanel; }
-    ui::panels::ColorSchemePanel* GetColorSchemePanel() const { return colorSchemePanel; }
+    ui::panels::TemplatePropertiesPanel* GetTemplatePanel() const;
+    ui::panels::LayoutEditorPanel* GetLayoutPanel() const;
+    ui::panels::ColorSchemePanel* GetColorSchemePanel() const;
 
-    ui::panels::TemplateLibraryPanel* GetTemplateLibraryPanel() const { return templateLibraryPanel; }
+    ui::panels::TemplateLibraryPanel* GetTemplateLibraryPanel() const;
 
-    ui::panels::FireworkListPanel* GetFireworkListPanel() const { return fireworkListPanel; }
-    ui::panels::SceneViewPanel* GetSceneViewPanel() const { return sceneViewPanel; }
-    ui::panels::TimelinePanel* GetTimelinePanel() const { return timelinePanel; }
+    ui::panels::FireworkListPanel* GetFireworkListPanel() const;
+    ui::panels::SceneViewPanel* GetSceneViewPanel() const;
+    ui::panels::TimelinePanel* GetTimelinePanel() const;
+
+    // Scene selection helpers (shared across scene panels).
+    int GetSelectedSceneEventIndex() const;
+    void SetSelectedSceneEventIndex(int idx);
+
+    // Convenience: switch to template editor and focus the template used by a scene event.
+    void EditTemplateForSceneEvent(int sceneEventIndex);
 
 private:
-    void RenderMainMenuBar();
-    void RenderDockSpace();
+    // Called by subsystems
+    void PerformFileAction(FileAction action, const std::string& path);
 
-private:
     GLFWwindow* window;
+
+    // Context pointers (owned by Application)
+    class TemplateLibrary* templateLibraryCtx = nullptr;
+    class Scene* sceneCtx = nullptr;
+    class Timeline* timelineCtx = nullptr;
+
     bool initialized;
-
-    // Panels
-    ui::panels::TemplatePropertiesPanel* templatePanel;
-    ui::panels::LayoutEditorPanel* layoutPanel;
-    ui::panels::ColorSchemePanel* colorSchemePanel;
-
-    ui::panels::TemplateLibraryPanel* templateLibraryPanel;
-
-    // Scene editor panels
-    ui::panels::FireworkListPanel* fireworkListPanel;
-    ui::panels::SceneViewPanel* sceneViewPanel;
-    ui::panels::TimelinePanel* timelinePanel;
 
     // UI state
     bool showDemoWindow;
     EditorMode mode;
 
-    // Shared selection between scene panels
-    int selectedSceneEventIndex;
+    // UI subsystems
+    std::unique_ptr<ui::subsystems::ImGuiLayer> imgui;
+    std::unique_ptr<ui::subsystems::FileController> files;
+    std::unique_ptr<ui::subsystems::Panels> panels;
+    std::unique_ptr<ui::subsystems::MenuBar> menubar;
 };

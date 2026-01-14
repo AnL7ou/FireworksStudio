@@ -40,6 +40,18 @@ void TemplateLibraryPanel::Render()
     ImGui::Text("Templates: %zu", library->Count());
 
     const auto& names = library->GetNames();
+
+    // Keep UI selection in sync with the library's active template.
+    // This matters when the active template changes via menu actions (e.g. Load Template)
+    // rather than through this panel's listbox interactions.
+    if (auto* active = library->Get(library->GetActiveId())) {
+        for (int i = 0; i < static_cast<int>(names.size()); ++i) {
+            if (names[i] == active->name) {
+                uiSelectedIndex = i;
+                break;
+            }
+        }
+    }
     if (uiSelectedIndex < 0) uiSelectedIndex = 0;
     if (uiSelectedIndex >= static_cast<int>(names.size())) uiSelectedIndex = static_cast<int>(names.size()) - 1;
 

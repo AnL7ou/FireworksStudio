@@ -1,5 +1,10 @@
 ﻿#include "Application.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+
+
 #include <imgui.h>
 
 #include "../fireworks/shapes/ShapeRegistry.h"
@@ -18,6 +23,7 @@ Application::Application()
     , renderer(nullptr)
     , trailRenderer(nullptr)
     , cameraController(nullptr)
+    , scenePlacementController(nullptr)
     , inputRouter(nullptr)
     , uiManager(nullptr)
     , shader(nullptr)
@@ -27,6 +33,9 @@ Application::Application()
     , instanceManager(nullptr)
     , scene(nullptr)
     , timeline(nullptr)
+    , lastTimelinePlaying(false)
+    , scenePreviewKey(0)
+    , scenePreviewValid(false)
 {
 }
 
@@ -154,7 +163,8 @@ bool Application::InitializeUI()
             if (!active || !instanceManager) {
                 return;
             }
-            auto* instance = new FireworkInstance(active, glm::vec3(0.0f, 0.0f, 0.0f), now + 0.5f);
+            // Immediate start: the template editor's "Test" should be responsive.
+            auto* instance = new FireworkInstance(active, glm::vec3(0.0f, 0.0f, 0.0f), now);
             instanceManager->AddInstance(instance);
             std::cerr << "[UI] Test explosion triggered (instance added)\n";
             });
@@ -164,6 +174,12 @@ bool Application::InitializeUI()
     inputRouter = new InputRouter();
     cameraController = new OrbitalCameraController(camera);
     inputRouter->AddListener(cameraController);
+
+    // Scene manipulation (select + drag firework events in the 3D view)
+    if (uiManager && scene) {
+        scenePlacementController = new ScenePlacementController(camera, *uiManager, *scene);
+        inputRouter->AddListener(scenePlacementController);
+    }
 
     glfwSetMouseButtonCallback(w, mouseButtonCallback);
     glfwSetCursorPosCallback(w, cursorPosCallback);
@@ -196,6 +212,15 @@ int Application::Run()
 
         // Scene playback (timeline time is independent from glfw time)
         if (timeline && scene && uiManager && uiManager->GetMode() == EditorMode::Scene) {
+            // If we just switched to Play, discard any preview state so playback is deterministic.
+            const bool playingNow = timeline->IsPlaying();
+            if (!lastTimelinePlaying && playingNow) {
+                if (instanceManager) instanceManager->Clear();
+                if (particlePool) particlePool->ClearAll();
+                scenePreviewValid = false;
+            }
+            lastTimelinePlaying = playingNow;
+
             float prev = timeline->GetLastDispatchedTime();
             float duration = scene->GetDuration();
             timeline->Update(delta, duration);
@@ -218,13 +243,25 @@ int Application::Run()
             }
         }
 
-        // Update all active firework instances
-        if (instanceManager) {
-            instanceManager->Update(now, delta, *particlePool);
+        // --- Paroxysm preview in Scene mode (no need to press Play) ---
+        // Rebuild only when selection/template/position changes.
+        if (uiManager && uiManager->GetMode() == EditorMode::Scene && timeline && !timeline->IsPlaying()) {
+            const uint64_t key = ComputeScenePreviewKey();
+            if (!scenePreviewValid || key != scenePreviewKey) {
+                scenePreviewKey = key;
+                RebuildSceneParoxysmPreview(now);
+            }
         }
 
-        // Update particle pool
-        particlePool->Update(delta);
+        // Update all active firework instances
+        // Note: in Scene mode preview (paroxysm), we keep a frozen cache and do not advance simulation.
+        if (instanceManager && particlePool) {
+            const bool inScenePreview = (uiManager && uiManager->GetMode() == EditorMode::Scene && timeline && !timeline->IsPlaying());
+            if (!inScenePreview) {
+                instanceManager->Update(now, delta, *particlePool);
+                particlePool->Update(delta);
+            }
+        }
 
         // Render 3D
         glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
@@ -245,8 +282,100 @@ int Application::Run()
     return 0;
 }
 
+static inline uint64_t HashCombine64(uint64_t h, uint64_t v)
+{
+    // 64-bit variant of boost::hash_combine
+    return h ^ (v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2));
+}
+
+uint64_t Application::ComputeScenePreviewKey() const
+{
+    if (!uiManager || !scene) return 0;
+    if (uiManager->GetMode() != EditorMode::Scene) return 0;
+
+    const int sel = uiManager->GetSelectedSceneEventIndex();
+    const auto& events = scene->GetEvents();
+    if (sel < 0 || sel >= static_cast<int>(events.size())) return 1; // valid but empty selection
+
+    const auto& e = events[static_cast<size_t>(sel)];
+
+    uint64_t h = 1469598103934665603ULL; // FNV offset basis
+    h = HashCombine64(h, static_cast<uint64_t>(sel));
+    h = HashCombine64(h, static_cast<uint64_t>(e.templateId));
+    h = HashCombine64(h, static_cast<uint64_t>(e.enabled ? 1 : 0));
+
+    // Quantize position to avoid rebuilds from tiny float jitter.
+    auto q = [](float x) -> int32_t { return static_cast<int32_t>(std::round(x * 1000.0f)); };
+    h = HashCombine64(h, static_cast<uint64_t>(static_cast<uint32_t>(q(e.position.x))));
+    h = HashCombine64(h, static_cast<uint64_t>(static_cast<uint32_t>(q(e.position.y))));
+    h = HashCombine64(h, static_cast<uint64_t>(static_cast<uint32_t>(q(e.position.z))));
+
+    return h;
+}
+
+void Application::RebuildSceneParoxysmPreview(float nowSeconds)
+{
+    scenePreviewValid = true;
+
+    if (!instanceManager || !particlePool || !scene || !templateLibrary || !uiManager || !timeline) {
+        if (instanceManager) instanceManager->Clear();
+        if (particlePool) particlePool->ClearAll();
+        return;
+    }
+    if (uiManager->GetMode() != EditorMode::Scene) return;
+    if (timeline->IsPlaying()) return;
+
+    const int sel = uiManager->GetSelectedSceneEventIndex();
+    const auto& events = scene->GetEvents();
+
+    instanceManager->Clear();
+    particlePool->ClearAll();
+
+    if (sel < 0 || sel >= static_cast<int>(events.size())) {
+        return;
+    }
+
+    const auto& e = events[static_cast<size_t>(sel)];
+    if (!e.enabled) return;
+
+    FireworkTemplate* t = templateLibrary->Get(e.templateId);
+    if (!t) return;
+
+    // Estimate a visually meaningful peak: after emission, around mid-life.
+    const float emission = std::max(0.0f, t->branchTemplate.emissionDuration);
+    const float life = std::max(0.0f, t->branchTemplate.lifetime);
+    float peakOffset = emission + 0.5f * life;
+
+    // Keep within a sane budget.
+    if (peakOffset < 0.1f) peakOffset = 0.1f;
+    if (peakOffset > 4.0f) peakOffset = 4.0f; // tighter cap to avoid stalls
+
+    const float startTime = nowSeconds - peakOffset;
+    auto* inst = new FireworkInstance(t, e.position, startTime);
+    instanceManager->AddInstance(inst);
+
+    // Simulate forward to "nowSeconds" with a bounded step count.
+    const float step = 1.0f / 30.0f;
+    const int maxSteps = 120;
+    int steps = static_cast<int>(std::ceil(peakOffset / step));
+    if (steps > maxSteps) steps = maxSteps;
+
+    float tcur = startTime;
+    const float target = nowSeconds;
+    for (int s = 0; s < steps; ++s) {
+        float dt = step;
+        if (tcur + dt > target) dt = std::max(0.0f, target - tcur);
+        instanceManager->Update(tcur + dt, dt, *particlePool);
+        particlePool->Update(dt);
+        tcur += dt;
+        if (dt <= 0.0f) break;
+    }
+}
+
 void Application::Shutdown()
 {
+    delete scenePlacementController;
+    scenePlacementController = nullptr;
     delete timeline;
     timeline = nullptr;
 

@@ -2,6 +2,9 @@
 
 # Collecter tous les fichiers sources (.cpp)
 file(GLOB_RECURSE FIREWORKS_SOURCES
+    # Asset (editor-facing wrapper)
+    asset/*.cpp
+
     # Template
     template/*.cpp
     
@@ -20,6 +23,9 @@ file(GLOB_RECURSE FIREWORKS_SOURCES
 
 # Headers importants à inclure explicitement pour l'IDE
 set(FIREWORKS_HEADERS
+    # Asset
+    asset/FireworkAsset.h
+
     # Template
     template/PhysicsProfile.h
     template/BranchLayout.h
