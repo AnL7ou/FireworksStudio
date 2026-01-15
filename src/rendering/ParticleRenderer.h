@@ -1,6 +1,7 @@
 #pragma once
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 #include <vector>
@@ -8,8 +9,8 @@
 
 #include "Shader.h"
 #include "Camera.h"
-#include "../fireworks/Particle.h"
-#include "../fireworks/ShapeRegistry.h"
+#include "../fireworks/particle/Particle.h"
+#include "../fireworks/shapes/ShapeRegistry.h"
 
 class ParticleRenderer {
 private:
@@ -18,7 +19,7 @@ private:
     Shader* shader;
     ShapeRegistry* shapeRegistry;
 
-    // Aspect ratio pour la projection (mis à jour depuis l'extérieur)
+    // Aspect ratio pour la projection (mis Ã  jour depuis l'extÃ©rieur)
     float aspectRatio;
 
 public:
@@ -29,9 +30,9 @@ public:
     bool initialize();
     void SetShapeRegistry(ShapeRegistry* registry);
 
-    // Définir l'aspect ratio (appelé depuis Application quand la fenêtre change)
+    // DÃ©finir l'aspect ratio (appelÃ© depuis Application quand la fenÃªtre change)
     void SetAspectRatio(float aspect) { aspectRatio = aspect; }
 
-    // Méthode principale de rendu
-    void Render(const std::vector<Particle>& particles, const Camera& camera);
+    // MÃ©thode principale de rendu
+    void Render(const std::vector<Particle>& particles, const Camera& camera, const glm::mat4& model = glm::mat4(1.0f));
 };

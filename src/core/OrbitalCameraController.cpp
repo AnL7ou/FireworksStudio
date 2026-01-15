@@ -11,7 +11,7 @@ OrbitalCameraController::OrbitalCameraController(Camera& cam)
 void OrbitalCameraController::OnMouseButton(GLFWwindow* /*window*/, int button, int action, int mods)
 {
     // If the UI is actively using the mouse, do not start/stop camera drags.
-    // This keeps the UI usable and prevents ìcamera fightsî.
+    // This keeps the UI usable and prevents ‚Äúcamera fights‚Äù.
     if (ImGui::GetIO().WantCaptureMouse)
         return;
 
@@ -57,7 +57,7 @@ void OrbitalCameraController::OnCursorPos(GLFWwindow* /*window*/, double x, doub
     // add a WantCaptureMouse check here too.
     if (mode == Mode::None)
     {
-        // Keep last positions updated so the next drag starts ìcleanî.
+        // Keep last positions updated so the next drag starts ‚Äúclean‚Äù.
         lastX = static_cast<float>(x);
         lastY = static_cast<float>(y);
         return;

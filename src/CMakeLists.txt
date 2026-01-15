@@ -23,7 +23,9 @@ target_include_directories(VendorLibs INTERFACE
 add_subdirectory(core)
 add_subdirectory(rendering)
 add_subdirectory(fireworks)
+add_subdirectory(editor)
 add_subdirectory(scene)
+add_subdirectory(serialization)
 add_subdirectory(ui)
 
 add_executable(FireworksStudio main.cpp)
@@ -31,7 +33,9 @@ target_link_libraries(FireworksStudio PRIVATE
     CoreLib
     RenderingLib
     FireworksLib
+    EditorLib
     SceneLib
+    SerializationLib
     UILib
 )
 

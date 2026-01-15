@@ -4,6 +4,7 @@
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <vector>
+#include <glm/glm.hpp>
 #include <memory>
 
 #include "Window.h"
@@ -11,15 +12,22 @@
 #include "InputRouter.h"
 #include "../rendering/Camera.h"
 #include "../rendering/ParticleRenderer.h"
-#include "../fireworks/Particle.h"
-#include "../fireworks/ParticleSystem.h"
-#include "../fireworks/FireworkTemplate.h"
-#include "../fireworks/FireworkInstance.h"
+#include "../rendering/TrailRenderer.h"
+#include "../fireworks/particle/Particle.h"
+#include "../fireworks/particle/ParticlePool.h"
+#include "../fireworks/template/FireworkTemplate.h"
+#include "../fireworks/instance/FireworkInstance.h"
+#include "../fireworks/instance/InstanceManager.h"
+#include "../fireworks/template/TemplateLibrary.h"
+#include "../scene/Scene.h"
+#include "../scene/Timeline.h"
+#include "../scene/ScenePlacementController.h"
+#include "../fireworks/editor/TemplateRotationController.h"
 #include "../rendering/Shader.h"
 #include "../ui/UIManager.h"
 
-// Forward declare UI manager to éviter d'exposer ImGui ici
-namespace ui { class UIManager; }
+// Forward declare UI manager
+class UIManager;
 
 class Application {
 private:
@@ -28,21 +36,45 @@ private:
 
     // Managers / Services
     ParticleRenderer* renderer;
+    TrailRenderer* trailRenderer;
     OrbitalCameraController* cameraController;
-	InputRouter* inputRouter;
+    ScenePlacementController* scenePlacementController;
+    TemplateRotationController* templateRotationController;
+    InputRouter* inputRouter;
     UIManager* uiManager;
 
     // State / Controllers
     Shader* shader;
-    ParticleSystem* particleSystem;
-    FireworkTemplate fwTemplate;
-    FireworkInstance* fwInstance;
+    Shader* trailShader;
+    ParticlePool* particlePool;
+    TemplateLibrary* templateLibrary;
+    InstanceManager* instanceManager;
 
-    // Fonctions d'initialisation factorisées
+    Scene* scene;
+    Timeline* timeline;
+
+    // Scene-mode paroxysm preview cache (avoid re-simulating every frame)
+    bool lastTimelinePlaying;
+    uint64_t scenePreviewKey;
+    bool scenePreviewValid;
+
+    uint64_t ComputeScenePreviewKey() const;
+    void RebuildSceneParoxysmPreview(float nowSeconds);
+
+    // Template-mode idle preview cache (avoid re-simulating every frame)
+    uint64_t templatePreviewKey;
+    bool templatePreviewValid;
+    uint64_t templatePreviewVersion;
+    glm::vec3 templatePreviewBakedRotation;
+
+    uint64_t ComputeTemplatePreviewKey() const;
+    void RebuildTemplateParoxysmPreview(float nowSeconds);
+
+    // Fonctions d'initialisation factorisÃ©es
     bool InitializeWindow();
     bool InitializeShaderAndRenderer();
-    bool InitializeParticleSystem();
-    void InitializeFireworkTemplate();
+    bool InitializeParticlePool();
+    void InitializeFireworkTemplates();
     bool InitializeUI();
     void SetupGLStates();
 

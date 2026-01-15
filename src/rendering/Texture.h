@@ -7,6 +7,6 @@
 class Texture
 {
 public:
-    // Retourne 0 en cas d'erreur. flipVertically = true par défaut.
+    // Retourne 0 en cas d'erreur. flipVertically = true par dÃ©faut.
     static GLuint LoadFromFile(const std::string& path, bool flipVertically = true);
 };

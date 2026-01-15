@@ -6,6 +6,7 @@ layout (location = 2) in float aSize;
 
 out vec4 vColor;
 
+uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 uniform vec3 uCameraPos;
@@ -15,7 +16,7 @@ void main()
     vColor = aColor;
     
     // Transformation standard MVP
-    gl_Position = projection * view * vec4(aPos, 1.0);
+    gl_Position = projection * view * model * vec4(aPos, 1.0);
     
     // Calcul de la taille du point
     // Option 1: Taille fixe (simple, recommandé pour commencer)

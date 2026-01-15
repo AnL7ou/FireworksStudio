@@ -5,7 +5,7 @@ int main()
 {
 	Application app;
 	if (!app.Initialize()) {
-		std::cerr << "Échec de l'initialisation de l'application\n";
+		std::cerr << "Ã‰chec de l'initialisation de l'application\n";
 		return -1;
 	}
 	app.Run();

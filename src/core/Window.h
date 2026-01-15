@@ -14,7 +14,7 @@ private:
 
 public:
 	Window();
-	// Constructeur pratique : si throwOnFail == true, une exception est lancée en cas d'échec
+	// Constructeur pratique : si throwOnFail == true, une exception est lancÃ©e en cas d'Ã©chec
 	Window(int _width, int _height, const std::string& _title, bool throwOnFail = false);
 	~Window();
 
