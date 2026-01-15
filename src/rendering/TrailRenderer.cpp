@@ -65,7 +65,7 @@ static inline glm::vec3 CameraRightFromView(const glm::mat4& view)
     return right;
 }
 
-void TrailRenderer::Render(const ParticlePool& pool, const Camera& camera)
+void TrailRenderer::Render(const ParticlePool& pool, const Camera& camera, const glm::mat4& model)
 {
     if (!shader || vao == 0 || vbo == 0 || ebo == 0) return;
 

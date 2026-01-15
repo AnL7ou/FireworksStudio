@@ -4,6 +4,7 @@
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <vector>
+#include <glm/glm.hpp>
 #include <memory>
 
 #include "Window.h"
@@ -21,6 +22,7 @@
 #include "../scene/Scene.h"
 #include "../scene/Timeline.h"
 #include "../scene/ScenePlacementController.h"
+#include "../fireworks/editor/TemplateRotationController.h"
 #include "../rendering/Shader.h"
 #include "../ui/UIManager.h"
 
@@ -37,6 +39,7 @@ private:
     TrailRenderer* trailRenderer;
     OrbitalCameraController* cameraController;
     ScenePlacementController* scenePlacementController;
+    TemplateRotationController* templateRotationController;
     InputRouter* inputRouter;
     UIManager* uiManager;
 
@@ -57,6 +60,15 @@ private:
 
     uint64_t ComputeScenePreviewKey() const;
     void RebuildSceneParoxysmPreview(float nowSeconds);
+
+    // Template-mode idle preview cache (avoid re-simulating every frame)
+    uint64_t templatePreviewKey;
+    bool templatePreviewValid;
+    uint64_t templatePreviewVersion;
+    glm::vec3 templatePreviewBakedRotation;
+
+    uint64_t ComputeTemplatePreviewKey() const;
+    void RebuildTemplateParoxysmPreview(float nowSeconds);
 
     // Fonctions d'initialisation factorisées
     bool InitializeWindow();

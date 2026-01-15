@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdint>
 
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 
 #include <imgui.h>
 
@@ -24,6 +26,7 @@ Application::Application()
     , trailRenderer(nullptr)
     , cameraController(nullptr)
     , scenePlacementController(nullptr)
+    , templateRotationController(nullptr)
     , inputRouter(nullptr)
     , uiManager(nullptr)
     , shader(nullptr)
@@ -36,6 +39,10 @@ Application::Application()
     , lastTimelinePlaying(false)
     , scenePreviewKey(0)
     , scenePreviewValid(false)
+    , templatePreviewKey(0)
+    , templatePreviewValid(false)
+    , templatePreviewVersion(0)
+    , templatePreviewBakedRotation(0.0f, 0.0f, 0.0f)
 {
 }
 
@@ -163,11 +170,21 @@ bool Application::InitializeUI()
             if (!active || !instanceManager) {
                 return;
             }
+            // Ensure we don't mix idle preview state with a live test.
+            templatePreviewValid = false;
+            if (instanceManager) instanceManager->Clear();
+            if (particlePool) particlePool->ClearAll();
             // Immediate start: the template editor's "Test" should be responsive.
             auto* instance = new FireworkInstance(active, glm::vec3(0.0f, 0.0f, 0.0f), now);
             instanceManager->AddInstance(instance);
             std::cerr << "[UI] Test explosion triggered (instance added)\n";
             });
+
+        // Any template edit invalidates the idle preview cache.
+        panel->SetOnTemplateChangedCallback([this](const FireworkTemplate&) {
+            templatePreviewValid = false;
+            ++templatePreviewVersion;
+        });
     }
 
     // Input system
@@ -179,6 +196,12 @@ bool Application::InitializeUI()
     if (uiManager && scene) {
         scenePlacementController = new ScenePlacementController(camera, *uiManager, *scene);
         inputRouter->AddListener(scenePlacementController);
+    }
+
+    // Template manipulation (rotate active template directly in the 3D view)
+    if (uiManager && templateLibrary) {
+        templateRotationController = new TemplateRotationController(*uiManager, *templateLibrary);
+        inputRouter->AddListener(templateRotationController);
     }
 
     glfwSetMouseButtonCallback(w, mouseButtonCallback);
@@ -253,11 +276,32 @@ int Application::Run()
             }
         }
 
+        // --- Idle preview in Template mode (no need to press "Test") ---
+        // Only when nothing is currently happening (no live particles/instances).
+        if (uiManager && uiManager->GetMode() == EditorMode::Template && particlePool && instanceManager) {
+            const bool idle = (particlePool->GetActiveCount() == 0 && instanceManager->GetActiveCount() == 0);
+            if (idle) {
+                const uint64_t key = ComputeTemplatePreviewKey();
+                if (!templatePreviewValid || key != templatePreviewKey) {
+                    templatePreviewKey = key;
+                    RebuildTemplateParoxysmPreview(now);
+                }
+            } else {
+				// If particles are present but there are no active instances, this is our frozen
+				// preview snapshot: keep it alive (and it will be excluded from simulation update).
+				// Only invalidate when a live test is running (instances > 0).
+				if (instanceManager->GetActiveCount() > 0) {
+					templatePreviewValid = false;
+				}
+            }
+        }
+
         // Update all active firework instances
         // Note: in Scene mode preview (paroxysm), we keep a frozen cache and do not advance simulation.
         if (instanceManager && particlePool) {
             const bool inScenePreview = (uiManager && uiManager->GetMode() == EditorMode::Scene && timeline && !timeline->IsPlaying());
-            if (!inScenePreview) {
+            const bool inTemplatePreview = (uiManager && uiManager->GetMode() == EditorMode::Template && templatePreviewValid && particlePool->GetActiveCount() > 0 && instanceManager->GetActiveCount() == 0);
+            if (!inScenePreview && !inTemplatePreview) {
                 instanceManager->Update(now, delta, *particlePool);
                 particlePool->Update(delta);
             }
@@ -267,11 +311,34 @@ int Application::Run()
         glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // Render particles
+        
+// Global model transform used for frozen previews (so rotation can update in real time without resimulation)
+glm::mat4 modelMat(1.0f);
+if (uiManager && templateLibrary) {
+    const bool inTemplatePreview = (uiManager->GetMode() == EditorMode::Template && particlePool && particlePool->GetActiveCount() > 0 && instanceManager && instanceManager->GetActiveCount() == 0);
+    if (inTemplatePreview) {
+        const FireworkTemplate* t = templateLibrary->GetActive();
+        const glm::vec3 cur = t ? t->worldRotation : glm::vec3(0.0f);
+        const glm::vec3 baked = templatePreviewBakedRotation;
+
+        auto rotMat = [](const glm::vec3& eulerDeg) {
+            glm::mat4 m(1.0f);
+            m = glm::rotate(m, glm::radians(eulerDeg.y), glm::vec3(0.0f, 1.0f, 0.0f)); // Yaw
+            m = glm::rotate(m, glm::radians(eulerDeg.x), glm::vec3(1.0f, 0.0f, 0.0f)); // Pitch
+            m = glm::rotate(m, glm::radians(eulerDeg.z), glm::vec3(0.0f, 0.0f, 1.0f)); // Roll
+            return m;
+        };
+
+        // Apply only the delta between current rotation and the rotation baked into the snapshot.
+        modelMat = rotMat(cur) * glm::inverse(rotMat(baked));
+    }
+}
+
+// Render particles
         if (trailRenderer) {
-            trailRenderer->Render(*particlePool, camera);
+            trailRenderer->Render(*particlePool, camera, modelMat);
         }
-        renderer->Render(particlePool->GetAll(), camera);
+        renderer->Render(particlePool->GetAll(), camera, modelMat);
 
         // Render ImGui
         uiManager->Render();
@@ -372,10 +439,80 @@ void Application::RebuildSceneParoxysmPreview(float nowSeconds)
     }
 }
 
+uint64_t Application::ComputeTemplatePreviewKey() const
+{
+    if (!uiManager || !templateLibrary) return 0;
+    if (uiManager->GetMode() != EditorMode::Template) return 0;
+
+    // The active template id is stable. `templatePreviewVersion` increments whenever the template is edited.
+    uint64_t h = 1469598103934665603ULL;
+    h = HashCombine64(h, static_cast<uint64_t>(templateLibrary->GetActiveId()));
+    h = HashCombine64(h, static_cast<uint64_t>(templatePreviewVersion));
+    return h;
+}
+
+void Application::RebuildTemplateParoxysmPreview(float nowSeconds)
+{
+    templatePreviewValid = true;
+
+    if (!instanceManager || !particlePool || !templateLibrary || !uiManager) {
+        if (instanceManager) instanceManager->Clear();
+        if (particlePool) particlePool->ClearAll();
+        return;
+    }
+    if (uiManager->GetMode() != EditorMode::Template) return;
+
+    FireworkTemplate* t = templateLibrary->GetActive();
+    templatePreviewBakedRotation = t ? t->worldRotation : glm::vec3(0.0f);
+    if (!t) {
+        instanceManager->Clear();
+        particlePool->ClearAll();
+        return;
+    }
+
+    instanceManager->Clear();
+    particlePool->ClearAll();
+
+    // Estimate a visually meaningful peak: after emission, around mid-life.
+    const float emission = std::max(0.0f, t->branchTemplate.emissionDuration);
+    const float life = std::max(0.0f, t->branchTemplate.lifetime);
+    float peakOffset = emission + 0.5f * life;
+
+    if (peakOffset < 0.1f) peakOffset = 0.1f;
+    if (peakOffset > 4.0f) peakOffset = 4.0f;
+
+    const float startTime = nowSeconds - peakOffset;
+    auto* inst = new FireworkInstance(t, glm::vec3(0.0f, 0.0f, 0.0f), startTime);
+    instanceManager->AddInstance(inst);
+
+    // Simulate forward to "nowSeconds" with a bounded step count.
+    const float step = 1.0f / 30.0f;
+    const int maxSteps = 120;
+    int steps = static_cast<int>(std::ceil(peakOffset / step));
+    if (steps > maxSteps) steps = maxSteps;
+
+    float tcur = startTime;
+    const float target = nowSeconds;
+    for (int s = 0; s < steps; ++s) {
+        float dt = step;
+        if (tcur + dt > target) dt = std::max(0.0f, target - tcur);
+        instanceManager->Update(tcur + dt, dt, *particlePool);
+        particlePool->Update(dt);
+        tcur += dt;
+        if (dt <= 0.0f) break;
+    }
+
+    // We don't want to keep an instance around for the idle preview.
+    instanceManager->Clear();
+}
+
 void Application::Shutdown()
 {
     delete scenePlacementController;
     scenePlacementController = nullptr;
+
+    delete templateRotationController;
+    templateRotationController = nullptr;
     delete timeline;
     timeline = nullptr;
 

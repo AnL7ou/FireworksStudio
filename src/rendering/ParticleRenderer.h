@@ -1,6 +1,7 @@
 #pragma once
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 #include <vector>
@@ -33,5 +34,5 @@ public:
     void SetAspectRatio(float aspect) { aspectRatio = aspect; }
 
     // Méthode principale de rendu
-    void Render(const std::vector<Particle>& particles, const Camera& camera);
+    void Render(const std::vector<Particle>& particles, const Camera& camera, const glm::mat4& model = glm::mat4(1.0f));
 };

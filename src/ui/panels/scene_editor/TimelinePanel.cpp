@@ -65,6 +65,12 @@ void TimelinePanel::Render()
         timeline->SetLastDispatchedTime(t);
     }
 
+    ImGui::SameLine();
+    if (ImGui::Button("Sort by time")) {
+        scene->SortByTime();
+        if (selectedEventIndex) *selectedEventIndex = -1;
+    }
+
     ImGui::Separator();
 
     // Interactive editor (video-editor-like) for playhead and events.

@@ -19,6 +19,9 @@ file(GLOB_RECURSE FIREWORKS_SOURCES
     
     # Shapes
     shapes/*.cpp
+
+    # Editor helpers
+    editor/*.cpp
 )
 
 # Headers importants à inclure explicitement pour l'IDE

@@ -19,7 +19,7 @@ public:
     bool initialize();
 
     void SetAspectRatio(float aspect) { aspectRatio = aspect; }
-    void Render(const ParticlePool& pool, const Camera& camera);
+    void Render(const ParticlePool& pool, const Camera& camera, const glm::mat4& model = glm::mat4(1.0f));
 
     // Global tuning (kept minimal; per-particle settings come from Particle fields)
     void SetAlphaPower(float p) { alphaPower = p; }

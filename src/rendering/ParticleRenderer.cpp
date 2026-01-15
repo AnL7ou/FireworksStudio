@@ -49,7 +49,7 @@ void ParticleRenderer::SetShapeRegistry(ShapeRegistry* registry)
     shapeRegistry = registry;
 }
 
-void ParticleRenderer::Render(const std::vector<Particle>& particles, const Camera& camera)
+void ParticleRenderer::Render(const std::vector<Particle>& particles, const Camera& camera, const glm::mat4& model)
 {
     if (!shader) return;
 
@@ -66,6 +66,7 @@ void ParticleRenderer::Render(const std::vector<Particle>& particles, const Came
     // Utiliser les vraies matrices de la caméra
     shader->setMat4("view", camera.getViewMatrix());
     shader->setMat4("projection", camera.getProjectionMatrix(aspectRatio));
+    shader->setMat4("model", model);
     shader->setVec3("uCameraPos", camera.getPosition());
 
     // Définir l'unité de texture utilisée (texture unit 0)
